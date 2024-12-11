@@ -13,7 +13,10 @@ CREATE TABLE IF NOT EXISTS users(
 """)
 
 username1, password1 = "ahmed", hashlib.sha256("ahmedpassword".encode()).hexdigest()
+username2, password2 = "amr", hashlib.sha256("test".encode()).hexdigest()
 
 cur.execute("INSERT INTO users (username, password) VALUES (?, ?)", (username1, password1))
+cur.execute("INSERT INTO users (username, password) VALUES (?, ?)", (username2, password2))
+
 
 conn.commit()
