@@ -1,18 +1,15 @@
 import socket
 import threading
 from formats import MAGENTA,WHITE,Style,BLUE,RED,ITALIC,YELLOW,BRIGHT,GREEN,CYAN,MAGENTA_BG
-import hashlib
 import re
 import aes_crypt
 import rsa_crypt
 import hashing
 
-# Choosing Nickname
 nickname = ""
 FORMAT = 'utf-8'
 AESKEY = ""
 
-# Connecting To Server
 client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 client.connect(('127.0.0.1', 55555))
 
@@ -31,29 +28,33 @@ def sendSignupRequst():
 
     password = hashing.hash_sha256(password)
     message = f'CREATE <{username}> <{password}>'
-    # HMAC = hashing.hash_sha256(message)
-    # messageWithHMAC = message + f' <{HMAC}>'
-    cipherText = aes_crypt.aes_encrypt(AESKEY, message.encode(FORMAT))
+    HMAC = hashing.hash_sha256(message)
+    messageWithHMAC = message + f' <{HMAC}>'
+    cipherText = aes_crypt.aes_encrypt(AESKEY, messageWithHMAC.encode(FORMAT))
     client.send(cipherText)
     while True:
         try:
-            message = client.recv(1024).decode(FORMAT)
-            # checkMessageIntegrity(message)
-            if message == "ACCEPT 200":
+            message = client.recv(1024)
+            message = aes_crypt.aes_decrypt(AESKEY, message).decode(FORMAT)
+            integrityCheck = checkMessageIntegrity(message)
+            if integrityCheck != 1:
+                return
+            if "ACCEPT 200" in message:
                 isUserLoggedIn = True
                 nickname = username
                 print(f"{BRIGHT}{GREEN}Account Created Successfully!")
                 print(Style.RESET_ALL)
                 return
-            elif message == "USERNAME_TAKEN 400":
+            elif "USERNAME_TAKEN 400" in message:
                 print(f"{BRIGHT}{RED}The username already exists in the database, please try again.")
                 print(Style.RESET_ALL)
                 return
-            elif message == "FAILED 500":
+            elif "FAILED 500" in message:
                 print(f"{BRIGHT}{RED}An error has occured while creating an account, please try again.")
                 print(Style.RESET_ALL)
                 return
-        except:
+        except Exception as e:
+            print(e)
             print(f"{BRIGHT}{RED}An error occured with the connection!")
             print(Style.RESET_ALL)
             client.close()
@@ -70,46 +71,50 @@ def sendLoginRequest():
     print(f"{BRIGHT}Processing....")
     print(Style.RESET_ALL)
 
-    password = hashlib.sha256(password.encode()).hexdigest()
+    password = hashing.hash_sha256(password)
     message = f'LOGIN <{username}> <{password}>'
-    # HMAC = hashing.hash_sha256(message)
-    # messageWithHMAC = message + f' <{HMAC}>'
-    cipherText = aes_crypt.aes_encrypt(AESKEY, message.encode(FORMAT))
-    # print(cipherText)
+    HMAC = hashing.hash_sha256(message)
+    messageWithHMAC = message + f' <{HMAC}>'
+    cipherText = aes_crypt.aes_encrypt(AESKEY, messageWithHMAC.encode(FORMAT))
     client.send(cipherText)
     while True:
         try:
-            message = client.recv(1024).decode(FORMAT)
-            # checkMessageIntegrity(message)
-            if message == "ACCEPT 200":
+            message = client.recv(1024)
+            message = aes_crypt.aes_decrypt(AESKEY, message).decode(FORMAT)
+            integrityCheck = checkMessageIntegrity(message)
+            if integrityCheck != 1:
+                return
+            if "ACCEPT 200" in message:
                 isUserLoggedIn = True
                 nickname = username
                 print(f"{BRIGHT}{GREEN}Login Success!")
                 print(Style.RESET_ALL)
                 return
-            elif message == "NOT_FOUND 401":
+            elif "NOT_FOUND 401" in message:
                 print(f"{BRIGHT}{RED}The username does not exist in the database, please try again.")
                 print(Style.RESET_ALL)
                 return
-            elif message == "INCORRECT_PASSWORD 402":
+            elif "INCORRECT_PASSWORD 402" in message:
                 print(f"{BRIGHT}{RED}Incorrect Password Entered, please try again.")
                 print(Style.RESET_ALL)
                 return
-            elif message == "FAILED 500":
+            elif "FAILED 500" in message:
                 print(f"{BRIGHT}{RED}An error has occured while logging you in, please try again.")
                 print(Style.RESET_ALL)
                 return
-        except:
+        except Exception as e:
+            print(e)
             print(f"{BRIGHT}{RED}An error occured with the connection!")
             print(Style.RESET_ALL)
             client.close()
             break
+
 def connectToServer():
     global AESKEY
     message = 'CONNECT'
-    # HMAC = hashing.hash_sha256(message)
-    # messageWithHMAC = message + f' <{HMAC}>'
-    client.send(message.encode(FORMAT))
+    HMAC = hashing.hash_sha256(message)
+    messageWithHMAC = message + f' <{HMAC}>'
+    client.send(messageWithHMAC.encode(FORMAT))
     while True:
         try:
             message = client.recv(1024)
@@ -127,34 +132,45 @@ def connectToServer():
             client.close()
             break
 
-# Listening to Server and Sending Nickname
 def receive():
     while True:
-        # try:
-            # Receive Message From Server
-            # If 'NICK' Send Nickname
-            message = client.recv(1024).decode(FORMAT)
-            print(message)
-        # except:
-        #     # Close Connection When Error
-        #     print("An error occured!")
-        #     client.close()
-        #     break
+        try:
+            message = client.recv(1024)
+            message = aes_crypt.aes_decrypt(AESKEY, message).decode(FORMAT)
+            integrityCheck = checkMessageIntegrity(message)
+            if integrityCheck != 1:
+                continue
+            messageList = message.split(" ")
+            sentHashValue = re.search(r'<(.*?)>', messageList[-1]).group(1)
+            messageWithoutHash = message.replace(f'<{sentHashValue}>', "")[:-1]
+            print(messageWithoutHash)
+        except:
+            # Close Connection When Error
+            print("An error occured!")
+            client.close()
+            break
 
-# Sending Messages To Server
 def write():
     while True:
         message = 'MESSAGE {}: {}'.format(nickname, input(''))
-        # HMAC = hashing.hash_sha256(message)
-        # messageWithHMAC = message + f' <{HMAC}>'
-        cipherText = aes_crypt.aes_encrypt(AESKEY, message.encode(FORMAT))
+        HMAC = hashing.hash_sha256(message)
+        messageWithHMAC = message + f' <{HMAC}>'
+        cipherText = aes_crypt.aes_encrypt(AESKEY, messageWithHMAC.encode(FORMAT))
         client.send(cipherText)
 
 def checkMessageIntegrity(message):
-    print(22222222222)
-    match = re.match(r"(\S+ \d+)<(\w+)>", message)
-    print(match.group(1))
-    print(match.group(2))
+    try:
+        messageList = message.split(" ")
+        sentHashValue = re.search(r'<(.*?)>', messageList[-1]).group(1)
+        messageWithoutHash = message.replace(f'<{sentHashValue}>', "")[:-1]
+        hashValue = hashing.hash_sha256(messageWithoutHash)
+        if hashValue == sentHashValue:
+            return 1
+        else:
+            return 0
+    except Exception as e:
+        print(e)
+        return 2
 
 if __name__ == "__main__":
     connectToServer()

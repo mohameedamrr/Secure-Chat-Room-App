@@ -5,13 +5,12 @@ import sqlite3
 import rsa_crypt
 import aes_crypt
 from user import User
+import hashing
 
-# Connection Data
 host = '127.0.0.1'
 port = 55555
 FORMAT = 'utf-8'
 
-# Starting Server
 server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 server.bind((host, port))
 server.listen()
@@ -20,24 +19,29 @@ SERVERAESKEY = aes_crypt.generate_aes_key()
 users = []
 
 def broadcast(message, messageOwner):
-        for user in users:
-            try:
-                if user.client == messageOwner or user.client == "":
-                    continue
-                user.client.send(message.encode(FORMAT))
-            except Exception as e:
-                print(e)
-                pass
+    HMAC = hashing.hash_sha256(message)
+    messageWithHMAC = message + f' <{HMAC}>'
+    for user in users:
+        try:
+            if user.client == messageOwner or user.client == "":
+                continue
+            cipherText = aes_crypt.aes_encrypt(user.aes_key, messageWithHMAC.encode(FORMAT))
+            user.client.send(cipherText)
+        except Exception as e:
+            print(e)
+            pass
 
 
-def loginCommand(messageReceived, address, client):
+def loginCommand(message, address, client):
     #  ACCEPT 200 -> 0 /// FAILED 500 -> 1/// NOT_FOUND 401 -> 2 /// INCORRECT_PASSWORD 402 -> 3
     try:
+        integrityCheck = checkMessageIntegrity(message)
+        if integrityCheck != 1:
+            return 1
         ip, port = address
-        username = re.search(r'<(.*?)>', messageReceived[1]).group(1)
-        password = re.search(r'<(.*?)>', messageReceived[2]).group(1)
-        # hash = re.search(r'<(.*?)>', messageReceived[3]).group(1)
-        # print(hash)
+        messageList = message.split(" ")
+        username = re.search(r'<(.*?)>', messageList[1]).group(1)
+        password = re.search(r'<(.*?)>', messageList[2]).group(1)
         if username == "" or password == "":
             return 1
         conn = sqlite3.connect("securityProject.db")
@@ -65,12 +69,16 @@ def loginCommand(messageReceived, address, client):
         print(e)
         return 1
 
-def signupCommand(messageReceived, address):
+def signupCommand(message, address):
     # ACCEPT 200 -> 0 /// USERNAME_TAKEN 400 -> 1 /// FAILED 500 -> 2
     try:
+        integrityCheck = checkMessageIntegrity(message)
+        if integrityCheck != 1:
+            return 1
+        messageList = message.split(" ")
         ip, port = address
-        username = re.search(r'<(.*?)>', messageReceived[1]).group(1)
-        password = re.search(r'<(.*?)>', messageReceived[2]).group(1)
+        username = re.search(r'<(.*?)>', messageList[1]).group(1)
+        password = re.search(r'<(.*?)>', messageList[2]).group(1)
 
         conn = sqlite3.connect("securityProject.db")
         cur = conn.cursor()
@@ -92,9 +100,12 @@ def signupCommand(messageReceived, address):
         print(e)
         return 2
 
-def connectCommand(messageReceived, address, client):
+def connectCommand(message, address, client):
     # ACCEPT 200 -> 0 /// FAILED 500 -> 1
     try:
+        integrityCheck = checkMessageIntegrity(message)
+        if integrityCheck != 1:
+            return 1
         public_key_pem = public_key.export_key(format="PEM")
         publicKeyMessage = public_key_pem
         ip, port = address
@@ -106,7 +117,6 @@ def connectCommand(messageReceived, address, client):
                     user_index = i
             rsaCipherText = client.recv(1024)
             userAESKey = rsa_crypt.rsa_decrypt(private_key, rsaCipherText)
-            print(userAESKey)
 
             users[user_index].aes_key = userAESKey
             return 0
@@ -122,30 +132,38 @@ def saveKey(address):
         if users[i].ip_address == ip and users[i].port_number == port:
             user_index = i
     if user_index != -1:
-        print(users[user_index].aes_key)
         encryptedAESKey = aes_crypt.aes_encrypt(SERVERAESKEY, users[user_index].aes_key)
-        print(encryptedAESKey)
         conn = sqlite3.connect("securityProject.db")
         cur = conn.cursor()
         cur.execute("UPDATE users SET AESKEY = ? WHERE USERNAME = ?", (encryptedAESKey, users[user_index].username))
         conn.commit()
 
-# Receiving / Listening Function
+def checkMessageIntegrity(message):
+    try:
+        messageList = message.split(" ")
+        sentHashValue = re.search(r'<(.*?)>', messageList[-1]).group(1)
+        messageWithoutHash = message.replace(f'<{sentHashValue}>', "")[:-1]
+        hashValue = hashing.hash_sha256(messageWithoutHash)
+        if hashValue == sentHashValue:
+            return 1
+        else:
+            return 0
+    except Exception as e:
+        print(e)
+        return 2
+
 def receive(client, address):
     isFirstMessage = True
+    ip, port = address
+    user_index = -1
+    for i in range(0, len(users)):
+        if users[i].ip_address == ip and users[i].port_number == port:
+            user_index = i
     while True:
-        # Request And Store Nickname
-        ip, port = address
         if isFirstMessage == False:
             message = client.recv(1024)
-            print(message)
-            aesKey = ""
-            for user in users:
-                if user.ip_address == ip and user.port_number == port:
-                    aesKey = user.aes_key
-            print(aesKey)
+            aesKey = users[user_index].aes_key
             message = aes_crypt.aes_decrypt(aesKey, message).decode(FORMAT)
-            print(message)
         else:
             message = client.recv(1024).decode(FORMAT)
             isFirstMessage = False
@@ -153,46 +171,72 @@ def receive(client, address):
         ip, port = address
         match messageReceived[0]:
             case "CONNECT":
-                responseCode = connectCommand(messageReceived, address, client)
+                responseCode = connectCommand(message, address, client)
             case "LOGIN":
-                responseCode = loginCommand(messageReceived, address, client)
+                responseCode = loginCommand(message, address, client)
                 if responseCode == 0:
                     saveKey(address)
-                    for user in users:
-                        if user.ip_address == ip and user.port_number == port:
-                            user.client = client
-                    client.send('ACCEPT 200'.encode(FORMAT))
+                    users[user_index].client = client
+                    message = 'ACCEPT 200'
+                    HMAC = hashing.hash_sha256(message)
+                    messageWithHMAC = message + f' <{HMAC}>'
+                    cipherText = aes_crypt.aes_encrypt(users[user_index].aes_key, messageWithHMAC.encode(FORMAT))
+                    client.send(cipherText)
                 elif responseCode == 1:
-                    client.send('FAILED 500'.encode(FORMAT))
+                    message = 'FAILED 500'
+                    HMAC = hashing.hash_sha256(message)
+                    messageWithHMAC = message + f' <{HMAC}>'
+                    cipherText = aes_crypt.aes_encrypt(users[user_index].aes_key, messageWithHMAC.encode(FORMAT))
+                    client.send(cipherText)
                 elif responseCode == 2:
-                    client.send('NOT_FOUND 401'.encode(FORMAT))
+                    message = 'NOT_FOUND 401'
+                    HMAC = hashing.hash_sha256(message)
+                    messageWithHMAC = message + f' <{HMAC}>'
+                    cipherText = aes_crypt.aes_encrypt(users[user_index].aes_key, messageWithHMAC.encode(FORMAT))
+                    client.send(cipherText)
                 elif responseCode == 3:
-                    client.send('INCORRECT_PASSWORD 402'.encode(FORMAT))
+                    message = 'INCORRECT_PASSWORD 402'
+                    HMAC = hashing.hash_sha256(message)
+                    messageWithHMAC = message + f' <{HMAC}>'
+                    cipherText = aes_crypt.aes_encrypt(users[user_index].aes_key, messageWithHMAC.encode(FORMAT))
+                    client.send(cipherText)
             case "MESSAGE":
                 try:
-                    broadcast(message[8:], client)
+                    integrityCheck = checkMessageIntegrity(message)
+                    if integrityCheck != 1:
+                        return 1
+                    messageList = message[8:].split(" ")
+                    sentHashValue = re.search(r'<(.*?)>', messageList[-1]).group(1)
+                    messageWithoutHash = message[8:].replace(f'<{sentHashValue}>', "")[:-1]
+                    broadcast(messageWithoutHash, client)
                 except Exception as e:
                     print(e)
-                    index = -1
-                    for i in range(0, len(users)):
-                        if users[i].ip_address == ip and users[i].port_number == port:
-                            index = i
-                    users[index].client.close()
-                    broadcast('{} left!'.format(users[index].username), users[index].client)
-                    users.remove(users[index])
+                    users[user_index].client.close()
+                    broadcast('{} left!'.format(users[user_index].username), users[user_index].client)
+                    users.remove(users[user_index])
                     break
             case "CREATE":
-                responseCode = signupCommand(messageReceived, address)
+                responseCode = signupCommand(message, address)
                 if responseCode == 0:
                     saveKey(address)
-                    for user in users:
-                        if user.ip_address == ip and user.port_number == port:
-                            user.client = client
-                    client.send('ACCEPT 200'.encode(FORMAT))
+                    users[user_index].client = client
+                    message = 'ACCEPT 200'
+                    HMAC = hashing.hash_sha256(message)
+                    messageWithHMAC = message + f' <{HMAC}>'
+                    cipherText = aes_crypt.aes_encrypt(users[user_index].aes_key, messageWithHMAC.encode(FORMAT))
+                    client.send(cipherText)
                 elif responseCode == 1:
-                    client.send('USERNAME_TAKEN 400'.encode(FORMAT))
+                    message = 'USERNAME_TAKEN 400'
+                    HMAC = hashing.hash_sha256(message)
+                    messageWithHMAC = message + f' <{HMAC}>'
+                    cipherText = aes_crypt.aes_encrypt(users[user_index].aes_key, messageWithHMAC.encode(FORMAT))
+                    client.send(cipherText)
                 elif responseCode == 2:
-                    client.send('FAILED 500'.encode(FORMAT))
+                    message = 'FAILED 500'
+                    HMAC = hashing.hash_sha256(message)
+                    messageWithHMAC = message + f' <{HMAC}>'
+                    cipherText = aes_crypt.aes_encrypt(users[user_index].aes_key, messageWithHMAC.encode(FORMAT))
+                    client.send(cipherText)
 
 def startConnectionWithClients():
     while True:
