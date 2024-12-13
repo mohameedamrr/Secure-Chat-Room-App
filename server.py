@@ -104,7 +104,7 @@ def connectCommand(messageReceived, address, client):
             for i in range(0, len(users)):
                 if users[i].ip_address == ip and users[i].port_number == port:
                     user_index = i
-            rsaCipherText = client.recv(2048)
+            rsaCipherText = client.recv(1024)
             userAESKey = rsa_crypt.rsa_decrypt(private_key, rsaCipherText)
             print(userAESKey)
 
@@ -137,7 +137,7 @@ def receive(client, address):
         # Request And Store Nickname
         ip, port = address
         if isFirstMessage == False:
-            message = client.recv(4096)
+            message = client.recv(1024)
             print(message)
             aesKey = ""
             for user in users:
@@ -147,7 +147,7 @@ def receive(client, address):
             message = aes_crypt.aes_decrypt(aesKey, message).decode(FORMAT)
             print(message)
         else:
-            message = client.recv(2048).decode(FORMAT)
+            message = client.recv(1024).decode(FORMAT)
             isFirstMessage = False
         messageReceived = message.split(" ")
         ip, port = address

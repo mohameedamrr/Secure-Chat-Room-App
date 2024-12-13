@@ -31,14 +31,14 @@ def sendSignupRequst():
 
     password = hashing.hash_sha256(password)
     message = f'CREATE <{username}> <{password}>'
-    HMAC = hashing.hash_sha256(message)
-    messageWithHMAC = message + f' <{HMAC}>'
-    cipherText = aes_crypt.aes_encrypt(AESKEY, messageWithHMAC.encode(FORMAT))
+    # HMAC = hashing.hash_sha256(message)
+    # messageWithHMAC = message + f' <{HMAC}>'
+    cipherText = aes_crypt.aes_encrypt(AESKEY, message.encode(FORMAT))
     client.send(cipherText)
     while True:
         try:
-            message = client.recv(2048).decode(FORMAT)
-            checkMessageIntegrity(message)
+            message = client.recv(1024).decode(FORMAT)
+            # checkMessageIntegrity(message)
             if message == "ACCEPT 200":
                 isUserLoggedIn = True
                 nickname = username
@@ -72,15 +72,15 @@ def sendLoginRequest():
 
     password = hashlib.sha256(password.encode()).hexdigest()
     message = f'LOGIN <{username}> <{password}>'
-    HMAC = hashing.hash_sha256(message)
-    messageWithHMAC = message + f' <{HMAC}>'
-    cipherText = aes_crypt.aes_encrypt(AESKEY, messageWithHMAC.encode(FORMAT))
-    print(cipherText)
+    # HMAC = hashing.hash_sha256(message)
+    # messageWithHMAC = message + f' <{HMAC}>'
+    cipherText = aes_crypt.aes_encrypt(AESKEY, message.encode(FORMAT))
+    # print(cipherText)
     client.send(cipherText)
     while True:
         try:
-            message = client.recv(2048).decode(FORMAT)
-            checkMessageIntegrity(message)
+            message = client.recv(1024).decode(FORMAT)
+            # checkMessageIntegrity(message)
             if message == "ACCEPT 200":
                 isUserLoggedIn = True
                 nickname = username
@@ -107,12 +107,12 @@ def sendLoginRequest():
 def connectToServer():
     global AESKEY
     message = 'CONNECT'
-    HMAC = hashing.hash_sha256(message)
-    messageWithHMAC = message + f' <{HMAC}>'
-    client.send(messageWithHMAC.encode(FORMAT))
+    # HMAC = hashing.hash_sha256(message)
+    # messageWithHMAC = message + f' <{HMAC}>'
+    client.send(message.encode(FORMAT))
     while True:
         try:
-            message = client.recv(2048)
+            message = client.recv(1024)
             rsaPublicKey = message
             public_key = rsa_crypt.RSA.import_key(rsaPublicKey)
             aesKey = aes_crypt.generate_aes_key()
@@ -133,7 +133,7 @@ def receive():
         # try:
             # Receive Message From Server
             # If 'NICK' Send Nickname
-            message = client.recv(2048).decode(FORMAT)
+            message = client.recv(1024).decode(FORMAT)
             print(message)
         # except:
         #     # Close Connection When Error
@@ -151,6 +151,7 @@ def write():
         client.send(cipherText)
 
 def checkMessageIntegrity(message):
+    print(22222222222)
     match = re.match(r"(\S+ \d+)<(\w+)>", message)
     print(match.group(1))
     print(match.group(2))
