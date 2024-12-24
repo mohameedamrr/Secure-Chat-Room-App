@@ -13,6 +13,7 @@ import ast
 from Crypto.Hash import SHA256
 
 PUBLICKEY = None
+PRIVATEKEYCLIENT = None
 nickname = ""
 FORMAT = 'utf-8'
 AESKEY = ""
@@ -35,28 +36,35 @@ def sendSignupRequst():
 
     password = hashing.hash_sha256(password)
     message = f'CREATE <{username}> <{password}>'
-    HMAC = hashing.hash_sha256(message)
-    messageWithHMAC = message + f' <{HMAC}>'
-    cipherText = aes_crypt.aes_encrypt(AESKEY, messageWithHMAC.encode(FORMAT))
-    client.send(cipherText)
+    delimiter = b":::DELIMITER:::"
+    hashMessage = SHA256.new(message.encode(FORMAT))
+    encryptedHash = rsa_crypt.rsa_encrypt(PRIVATEKEYCLIENT, hashMessage)
+    encryptedMessage = aes_crypt.aes_encrypt(AESKEY, message.encode(FORMAT))
+    newMesssage = encryptedMessage + delimiter + encryptedHash
+    client.send(newMesssage)
     while True:
         try:
             message = client.recv(1024)
-            message = aes_crypt.aes_decrypt(AESKEY, message).decode(FORMAT)
-            integrityCheck = checkMessageIntegrity(message)
-            if integrityCheck != 1:
-                return
-            if "ACCEPT 200" in message:
+            delimiter = b":::DELIMITER:::"
+            parts = message.split(delimiter)
+            decryptedMessage = aes_crypt.aes_decrypt(AESKEY, parts[0]).decode(FORMAT)
+            digitalSignature = parts[1]
+            if not checkMessageIntegrity(decryptedMessage,digitalSignature):
+                print(f"{BRIGHT}{RED}digital signature is different")
+                print(Style.RESET_ALL)
+                client.close()
+                break
+            if "ACCEPT 200" in decryptedMessage:
                 isUserLoggedIn = True
                 nickname = username
                 print(f"{BRIGHT}{GREEN}Account Created Successfully!")
                 print(Style.RESET_ALL)
                 return
-            elif "USERNAME_TAKEN 400" in message:
+            elif "USERNAME_TAKEN 400" in decryptedMessage:
                 print(f"{BRIGHT}{RED}The username already exists in the database, please try again.")
                 print(Style.RESET_ALL)
                 return
-            elif "FAILED 500" in message:
+            elif "FAILED 500" in decryptedMessage:
                 print(f"{BRIGHT}{RED}An error has occured while creating an account, please try again.")
                 print(Style.RESET_ALL)
                 return
@@ -80,32 +88,39 @@ def sendLoginRequest():
 
     password = hashing.hash_sha256(password)
     message = f'LOGIN <{username}> <{password}>'
-    HMAC = hashing.hash_sha256(message)
-    messageWithHMAC = message + f' <{HMAC}>'
-    cipherText = aes_crypt.aes_encrypt(AESKEY, messageWithHMAC.encode(FORMAT))
-    client.send(cipherText)
+    delimiter = b":::DELIMITER:::"
+    hashMessage = SHA256.new(message.encode(FORMAT))
+    encryptedHash = rsa_crypt.rsa_encrypt(PRIVATEKEYCLIENT, hashMessage)
+    encryptedMessage = aes_crypt.aes_encrypt(AESKEY, message.encode(FORMAT))
+    newMesssage = encryptedMessage + delimiter + encryptedHash
+    client.send(newMesssage)
     while True:
         try:
             message = client.recv(1024)
-            message = aes_crypt.aes_decrypt(AESKEY, message).decode(FORMAT)
-            integrityCheck = checkMessageIntegrity(message)
-            if integrityCheck != 1:
-                return
-            if "ACCEPT 200" in message:
+            delimiter = b":::DELIMITER:::"
+            parts = message.split(delimiter)
+            decryptedMessage = aes_crypt.aes_decrypt(AESKEY, parts[0]).decode(FORMAT)
+            digitalSignature = parts[1]
+            if not checkMessageIntegrity(decryptedMessage,digitalSignature):
+                print(f"{BRIGHT}{RED}digital signature is different")
+                print(Style.RESET_ALL)
+                client.close()
+                break
+            if "ACCEPT 200" in decryptedMessage:
                 isUserLoggedIn = True
                 nickname = username
                 print(f"{BRIGHT}{GREEN}Login Success!")
                 print(Style.RESET_ALL)
                 return
-            elif "NOT_FOUND 401" in message:
+            elif "NOT_FOUND 401" in decryptedMessage:
                 print(f"{BRIGHT}{RED}The username does not exist in the database, please try again.")
                 print(Style.RESET_ALL)
                 return
-            elif "INCORRECT_PASSWORD 402" in message:
+            elif "INCORRECT_PASSWORD 402" in decryptedMessage:
                 print(f"{BRIGHT}{RED}Incorrect Password Entered, please try again.")
                 print(Style.RESET_ALL)
                 return
-            elif "FAILED 500" in message:
+            elif "FAILED 500" in decryptedMessage:
                 print(f"{BRIGHT}{RED}An error has occured while logging you in, please try again.")
                 print(Style.RESET_ALL)
                 return
@@ -118,15 +133,15 @@ def sendLoginRequest():
 
 def connectToServer():
     global PUBLICKEY
+    global PRIVATEKEYCLIENT
     global AESKEY
     message = 'CONNECT'
     nonce = challenge.generateNonce()
     AESKEY = aes_crypt.generate_aes_key()
     (private_key_client, public_key_client) = rsa_crypt.generate_rsa_keys()
-    hmacKey = '1'
+    PRIVATEKEYCLIENT = private_key_client
     pem_public_key_client = rsa_crypt.key_to_pem(public_key_client, is_private=False)
     messageToEncrypt = message + f' {AESKEY}' + f' {nonce}'
-    print(AESKEY)
     load_dotenv()
     PUBLICKEY = rsa_crypt.RSA.import_key(os.getenv("SERVER_PUBLIC_KEY"))
     encryptedMessage = rsa_crypt.rsa_encrypt(PUBLICKEY, messageToEncrypt.encode(FORMAT))
@@ -143,17 +158,12 @@ def connectToServer():
             messageStatus = messageList[0]
             receivedNonce = ast.literal_eval(messageList[1])
             digitalSignature = parts[1]
-            print(digitalSignature)
             if not checkMessageIntegrity(decryptedMessage,digitalSignature):
                 print(f"{BRIGHT}{RED}digital signature is different")
                 print(Style.RESET_ALL)
                 client.close()
                 break
             calculatedNonce = challenge.calculateChallenge(nonce, AESKEY)
-            print(calculatedNonce)
-            print(receivedNonce)
-            print(type(calculatedNonce))
-            print(type(receivedNonce))
             if(calculatedNonce != receivedNonce or messageStatus != "ACCEPT_200"):
                 print(f"{BRIGHT}{RED}An error occured with the connection! (Check Server)")
                 print(Style.RESET_ALL)
@@ -171,11 +181,16 @@ def receive():
     while True:
         try:
             message = client.recv(1024)
-            message = aes_crypt.aes_decrypt(AESKEY, message).decode(FORMAT)
-            integrityCheck = checkMessageIntegrity(message)
-            if integrityCheck != 1:
-                continue
-            messageList = message.split(" ")
+            delimiter = b":::DELIMITER:::"
+            parts = message.split(delimiter)
+            decryptedMessage = aes_crypt.aes_decrypt(AESKEY, parts[0]).decode(FORMAT)
+            digitalSignature = parts[1]
+            if not checkMessageIntegrity(decryptedMessage,digitalSignature):
+                print(f"{BRIGHT}{RED}digital signature is different")
+                print(Style.RESET_ALL)
+                client.close()
+                break
+            messageList = decryptedMessage.split(" ")
             sentHashValue = re.search(r'<(.*?)>', messageList[-1]).group(1)
             messageWithoutHash = message.replace(f'<{sentHashValue}>', "")[:-1]
             print(messageWithoutHash)
@@ -188,13 +203,15 @@ def receive():
 def write():
     while True:
         message = 'MESSAGE {}: {}'.format(nickname, input(''))
-        HMAC = hashing.hash_sha256(message)
-        messageWithHMAC = message + f' <{HMAC}>'
-        cipherText = aes_crypt.aes_encrypt(AESKEY, messageWithHMAC.encode(FORMAT))
-        client.send(cipherText)
+        delimiter = b":::DELIMITER:::"
+        hashMessage = SHA256.new(message.encode(FORMAT))
+        encryptedHash = rsa_crypt.rsa_encrypt(PRIVATEKEYCLIENT, hashMessage)
+        encryptedMessage = aes_crypt.aes_encrypt(AESKEY, message.encode(FORMAT))
+        newMesssage = encryptedMessage + delimiter + encryptedHash
+        client.send(newMesssage)
 
 def checkMessageIntegrity(message , signature):
-    global PUBLICKEY 
+    global PUBLICKEY
     try:
         # calculatedHash = hashing.hash_sha256(message)
         calculatedHash = SHA256.new(message.encode(FORMAT))

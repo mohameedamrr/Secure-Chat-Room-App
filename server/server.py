@@ -48,14 +48,16 @@ def getPrivateKey():
 
 
 def broadcast(message, messageOwner):
-    HMAC = hashing.hash_sha256(message)
-    messageWithHMAC = message + f' <{HMAC}>'
     for user in users:
         try:
             if user.client == messageOwner or user.client == "":
                 continue
-            cipherText = aes_crypt.aes_encrypt(user.aes_key, messageWithHMAC.encode(FORMAT))
-            user.client.send(cipherText)
+            delimiter = b":::DELIMITER:::"
+            hashMessage = SHA256.new(message.encode(FORMAT))
+            encryptedHash = rsa_crypt.rsa_encrypt(PRIVATEKEY, hashMessage)
+            encryptedMessage = aes_crypt.aes_encrypt(user.aes_key, message.encode(FORMAT))
+            newMesssage = encryptedMessage + delimiter + encryptedHash
+            user.client.send(newMesssage)
         except Exception as e:
             print(e)
             pass
@@ -146,15 +148,10 @@ def connectCommand(message, address, client):
         # newMesssage = "ACCEPT_200" + f'{":::DELIMITER:::"}{newNonce}' + f'{":::DELIMITER:::"}{1}'
         initialMessage = "ACCEPT_200" + f'{":::DELIMITER:::"}{newNonce}'
         hashMessage = SHA256.new(initialMessage.encode(FORMAT))
-        print(hashMessage)
         encryptedHash = rsa_crypt.rsa_encrypt(PRIVATEKEY, hashMessage)
         publicKeyClient = rsa_crypt.load_public_key_from_pem(publicKeyClientPem.encode(FORMAT))
         encryptedMessage = rsa_crypt.rsa_encrypt(publicKeyClient, initialMessage.encode(FORMAT))
-        print(type(encryptedMessage))
-        print(type(encryptedHash))
-        print(type(delimiter))
         newMesssage = encryptedMessage + delimiter + encryptedHash
-        print(encryptedHash)
         client.send(newMesssage)
         ip, port = address
         user_index = -1
@@ -207,28 +204,36 @@ def receive(client, address):
                     if responseCode == 0:
                         users[user_index].client = client
                         message = 'ACCEPT 200'
-                        HMAC = hashing.hash_sha256(message)
-                        messageWithHMAC = message + f' <{HMAC}>'
-                        cipherText = aes_crypt.aes_encrypt(users[user_index].aes_key, messageWithHMAC.encode(FORMAT))
-                        client.send(cipherText)
+                        delimiter = b":::DELIMITER:::"
+                        hashMessage = SHA256.new(message.encode(FORMAT))
+                        encryptedHash = rsa_crypt.rsa_encrypt(PRIVATEKEY, hashMessage)
+                        encryptedMessage = aes_crypt.aes_encrypt(users[user_index].aes_key, message.encode(FORMAT))
+                        newMesssage = encryptedMessage + delimiter + encryptedHash
+                        client.send(newMesssage)
                     elif responseCode == 1:
                         message = 'FAILED 500'
-                        HMAC = hashing.hash_sha256(message)
-                        messageWithHMAC = message + f' <{HMAC}>'
-                        cipherText = aes_crypt.aes_encrypt(users[user_index].aes_key, messageWithHMAC.encode(FORMAT))
-                        client.send(cipherText)
+                        delimiter = b":::DELIMITER:::"
+                        hashMessage = SHA256.new(message.encode(FORMAT))
+                        encryptedHash = rsa_crypt.rsa_encrypt(PRIVATEKEY, hashMessage)
+                        encryptedMessage = aes_crypt.aes_encrypt(users[user_index].aes_key, message.encode(FORMAT))
+                        newMesssage = encryptedMessage + delimiter + encryptedHash
+                        client.send(newMesssage)
                     elif responseCode == 2:
                         message = 'NOT_FOUND 401'
-                        HMAC = hashing.hash_sha256(message)
-                        messageWithHMAC = message + f' <{HMAC}>'
-                        cipherText = aes_crypt.aes_encrypt(users[user_index].aes_key, messageWithHMAC.encode(FORMAT))
-                        client.send(cipherText)
+                        delimiter = b":::DELIMITER:::"
+                        hashMessage = SHA256.new(message.encode(FORMAT))
+                        encryptedHash = rsa_crypt.rsa_encrypt(PRIVATEKEY, hashMessage)
+                        encryptedMessage = aes_crypt.aes_encrypt(users[user_index].aes_key, message.encode(FORMAT))
+                        newMesssage = encryptedMessage + delimiter + encryptedHash
+                        client.send(newMesssage)
                     elif responseCode == 3:
                         message = 'INCORRECT_PASSWORD 402'
-                        HMAC = hashing.hash_sha256(message)
-                        messageWithHMAC = message + f' <{HMAC}>'
-                        cipherText = aes_crypt.aes_encrypt(users[user_index].aes_key, messageWithHMAC.encode(FORMAT))
-                        client.send(cipherText)
+                        delimiter = b":::DELIMITER:::"
+                        hashMessage = SHA256.new(message.encode(FORMAT))
+                        encryptedHash = rsa_crypt.rsa_encrypt(PRIVATEKEY, hashMessage)
+                        encryptedMessage = aes_crypt.aes_encrypt(users[user_index].aes_key, message.encode(FORMAT))
+                        newMesssage = encryptedMessage + delimiter + encryptedHash
+                        client.send(newMesssage)
                 case "MESSAGE":
                     try:
                         integrityCheck = checkMessageIntegrity(message)
@@ -249,22 +254,28 @@ def receive(client, address):
                     if responseCode == 0:
                         users[user_index].client = client
                         message = 'ACCEPT 200'
-                        HMAC = hashing.hash_sha256(message)
-                        messageWithHMAC = message + f' <{HMAC}>'
-                        cipherText = aes_crypt.aes_encrypt(users[user_index].aes_key, messageWithHMAC.encode(FORMAT))
-                        client.send(cipherText)
+                        delimiter = b":::DELIMITER:::"
+                        hashMessage = SHA256.new(message.encode(FORMAT))
+                        encryptedHash = rsa_crypt.rsa_encrypt(PRIVATEKEY, hashMessage)
+                        encryptedMessage = aes_crypt.aes_encrypt(users[user_index].aes_key, message.encode(FORMAT))
+                        newMesssage = encryptedMessage + delimiter + encryptedHash
+                        client.send(newMesssage)
                     elif responseCode == 1:
                         message = 'USERNAME_TAKEN 400'
-                        HMAC = hashing.hash_sha256(message)
-                        messageWithHMAC = message + f' <{HMAC}>'
-                        cipherText = aes_crypt.aes_encrypt(users[user_index].aes_key, messageWithHMAC.encode(FORMAT))
-                        client.send(cipherText)
+                        delimiter = b":::DELIMITER:::"
+                        hashMessage = SHA256.new(message.encode(FORMAT))
+                        encryptedHash = rsa_crypt.rsa_encrypt(PRIVATEKEY, hashMessage)
+                        encryptedMessage = aes_crypt.aes_encrypt(users[user_index].aes_key, message.encode(FORMAT))
+                        newMesssage = encryptedMessage + delimiter + encryptedHash
+                        client.send(newMesssage)
                     elif responseCode == 2:
                         message = 'FAILED 500'
-                        HMAC = hashing.hash_sha256(message)
-                        messageWithHMAC = message + f' <{HMAC}>'
-                        cipherText = aes_crypt.aes_encrypt(users[user_index].aes_key, messageWithHMAC.encode(FORMAT))
-                        client.send(cipherText)
+                        delimiter = b":::DELIMITER:::"
+                        hashMessage = SHA256.new(message.encode(FORMAT))
+                        encryptedHash = rsa_crypt.rsa_encrypt(PRIVATEKEY, hashMessage)
+                        encryptedMessage = aes_crypt.aes_encrypt(users[user_index].aes_key, message.encode(FORMAT))
+                        newMesssage = encryptedMessage + delimiter + encryptedHash
+                        client.send(newMesssage)
 
 def startConnectionWithClients():
     while True:
