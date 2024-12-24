@@ -7,10 +7,12 @@ import aes_crypt
 import rsa_crypt
 import hashing
 import challenge
+from Crypto.Signature import pkcs1_15
 from dotenv import load_dotenv, dotenv_values
 import ast
+from Crypto.Hash import SHA256
 
-
+PUBLICKEY = None
 nickname = ""
 FORMAT = 'utf-8'
 AESKEY = ""
@@ -115,6 +117,7 @@ def sendLoginRequest():
             break
 
 def connectToServer():
+    global PUBLICKEY
     global AESKEY
     message = 'CONNECT'
     nonce = challenge.generateNonce()
@@ -133,11 +136,19 @@ def connectToServer():
     while True:
         # try:
             message = client.recv(1024)
-            decryptedMessage = rsa_crypt.rsa_decrypt(private_key_client, message).decode(FORMAT)
+            delimiter = b":::DELIMITER:::"
+            parts = message.split(delimiter)
+            decryptedMessage = rsa_crypt.rsa_decrypt(private_key_client, parts[0]).decode(FORMAT)
             messageList = decryptedMessage.split(":::DELIMITER:::")
             messageStatus = messageList[0]
             receivedNonce = ast.literal_eval(messageList[1])
-            digitalSignature = messageList[2]
+            digitalSignature = parts[1]
+            print(digitalSignature)
+            if not checkMessageIntegrity(decryptedMessage,digitalSignature):
+                print(f"{BRIGHT}{RED}digital signature is different")
+                print(Style.RESET_ALL)
+                client.close()
+                break
             calculatedNonce = challenge.calculateChallenge(nonce, AESKEY)
             print(calculatedNonce)
             print(receivedNonce)
@@ -182,19 +193,19 @@ def write():
         cipherText = aes_crypt.aes_encrypt(AESKEY, messageWithHMAC.encode(FORMAT))
         client.send(cipherText)
 
-def checkMessageIntegrity(message):
+def checkMessageIntegrity(message , signature):
+    global PUBLICKEY 
     try:
-        messageList = message.split(" ")
-        sentHashValue = re.search(r'<(.*?)>', messageList[-1]).group(1)
-        messageWithoutHash = message.replace(f'<{sentHashValue}>', "")[:-1]
-        hashValue = hashing.hash_sha256(messageWithoutHash)
-        if hashValue == sentHashValue:
-            return 1
-        else:
-            return 0
+        # calculatedHash = hashing.hash_sha256(message)
+        calculatedHash = SHA256.new(message.encode(FORMAT))
+        print(calculatedHash)
+        print(signature)
+        print(PUBLICKEY.public_key)
+        pkcs1_15.new(PUBLICKEY).verify(calculatedHash, signature)
+        return 1
     except Exception as e:
         print(e)
-        return 2
+        return 0
 
 if __name__ == "__main__":
     connectToServer()

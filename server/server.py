@@ -11,6 +11,7 @@ from dotenv import load_dotenv, dotenv_values
 import os
 import base64
 import ast
+from Crypto.Hash import SHA256
 
 host = '127.0.0.1'
 port = 55555
@@ -130,7 +131,7 @@ def signupCommand(message, address):
 
 def connectCommand(message, address, client):
     # ACCEPT 200 -> 0 /// FAILED 500 -> 1
-    try:
+    #try:
         delimiter = b":::DELIMITER:::"
         parts = message.split(delimiter, maxsplit=1)
         decryptedMessage = rsa_crypt.rsa_decrypt(PRIVATEKEY, parts[0][:-2]).decode(FORMAT).split(" ")
@@ -142,10 +143,19 @@ def connectCommand(message, address, client):
         if messageCommand != "CONNECT":
             return 1
         # TODO: make digital signature
-        newMesssage = "ACCEPT_200" + f'{":::DELIMITER:::"}{newNonce}' + f'{":::DELIMITER:::"}{1}'
+        # newMesssage = "ACCEPT_200" + f'{":::DELIMITER:::"}{newNonce}' + f'{":::DELIMITER:::"}{1}'
+        initialMessage = "ACCEPT_200" + f'{":::DELIMITER:::"}{newNonce}'
+        hashMessage = SHA256.new(initialMessage.encode(FORMAT))
+        print(hashMessage)
+        encryptedHash = rsa_crypt.rsa_encrypt(PRIVATEKEY, hashMessage)
         publicKeyClient = rsa_crypt.load_public_key_from_pem(publicKeyClientPem.encode(FORMAT))
-        encryptedMessage = rsa_crypt.rsa_encrypt(publicKeyClient, newMesssage.encode(FORMAT))
-        client.send(encryptedMessage)
+        encryptedMessage = rsa_crypt.rsa_encrypt(publicKeyClient, initialMessage.encode(FORMAT))
+        print(type(encryptedMessage))
+        print(type(encryptedHash))
+        print(type(delimiter))
+        newMesssage = encryptedMessage + delimiter + encryptedHash
+        print(encryptedHash)
+        client.send(newMesssage)
         ip, port = address
         user_index = -1
         for i in range(0, len(users)):
@@ -155,11 +165,11 @@ def connectCommand(message, address, client):
         users[user_index].aes_key = userAESKey
         users[user_index].public_key_client = publicKeyClient
         return 0
-    except Exception as e:
-        print(e)
-        return 1
+    # except Exception as e:
+    #     print(e)
+    #     return 1
 
-def checkMessageIntegrity(message):
+def checkMessageIntegrity(message , hashvalue):
     try:
         messageList = message.split(" ")
         sentHashValue = re.search(r'<(.*?)>', messageList[-1]).group(1)
