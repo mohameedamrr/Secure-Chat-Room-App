@@ -10,6 +10,7 @@ import challenge
 from dotenv import load_dotenv, dotenv_values
 import os
 import base64
+import ast
 
 host = '127.0.0.1'
 port = 55555
@@ -134,14 +135,14 @@ def connectCommand(message, address, client):
         parts = message.split(delimiter, maxsplit=1)
         decryptedMessage = rsa_crypt.rsa_decrypt(PRIVATEKEY, parts[0][:-2]).decode(FORMAT).split(" ")
         messageCommand = decryptedMessage[0]
-        userAESKey = decryptedMessage[1].encode('utf-8')
-        receivedNonce = decryptedMessage[2].encode('utf-8')
+        userAESKey = ast.literal_eval(decryptedMessage[1])
+        receivedNonce = ast.literal_eval(decryptedMessage[2])
         publicKeyClientPem = parts[1][2:].decode("utf-8").strip("'").replace("\\n", "\n")
         newNonce = challenge.calculateChallenge(receivedNonce, userAESKey)
         if messageCommand != "CONNECT":
             return 1
         # TODO: make digital signature
-        newMesssage = "ACCEPT_200" + f'{delimiter}{newNonce}' + f'{delimiter}{1}'
+        newMesssage = "ACCEPT_200" + f'{":::DELIMITER:::"}{newNonce}' + f'{":::DELIMITER:::"}{1}'
         publicKeyClient = rsa_crypt.load_public_key_from_pem(publicKeyClientPem.encode(FORMAT))
         encryptedMessage = rsa_crypt.rsa_encrypt(publicKeyClient, newMesssage.encode(FORMAT))
         client.send(encryptedMessage)

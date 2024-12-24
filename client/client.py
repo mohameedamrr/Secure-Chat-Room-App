@@ -8,6 +8,8 @@ import rsa_crypt
 import hashing
 import challenge
 from dotenv import load_dotenv, dotenv_values
+import ast
+
 
 nickname = ""
 FORMAT = 'utf-8'
@@ -121,6 +123,7 @@ def connectToServer():
     hmacKey = '1'
     pem_public_key_client = rsa_crypt.key_to_pem(public_key_client, is_private=False)
     messageToEncrypt = message + f' {AESKEY}' + f' {nonce}'
+    print(AESKEY)
     load_dotenv()
     PUBLICKEY = rsa_crypt.RSA.import_key(os.getenv("SERVER_PUBLIC_KEY"))
     encryptedMessage = rsa_crypt.rsa_encrypt(PUBLICKEY, messageToEncrypt.encode(FORMAT))
@@ -131,12 +134,15 @@ def connectToServer():
         # try:
             message = client.recv(1024)
             decryptedMessage = rsa_crypt.rsa_decrypt(private_key_client, message).decode(FORMAT)
-            messageList = decryptedMessage.split(delimiter)
-            print(messageList)
+            messageList = decryptedMessage.split(":::DELIMITER:::")
             messageStatus = messageList[0]
-            receivedNonce = messageList[1]
+            receivedNonce = ast.literal_eval(messageList[1])
             digitalSignature = messageList[2]
             calculatedNonce = challenge.calculateChallenge(nonce, AESKEY)
+            print(calculatedNonce)
+            print(receivedNonce)
+            print(type(calculatedNonce))
+            print(type(receivedNonce))
             if(calculatedNonce != receivedNonce or messageStatus != "ACCEPT_200"):
                 print(f"{BRIGHT}{RED}An error occured with the connection! (Check Server)")
                 print(Style.RESET_ALL)
