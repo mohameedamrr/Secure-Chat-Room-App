@@ -55,7 +55,7 @@ def broadcast(message, messageOwner):
                 continue
             delimiter = b":::DELIMITER:::"
             hashMessage = SHA256.new(message.encode(FORMAT))
-            encryptedHash = rsa_crypt.rsa_encrypt(PRIVATEKEY, hashMessage)
+            encryptedHash = pkcs1_15.new(PRIVATEKEY).sign(hashMessage)
             encryptedMessage = aes_crypt.aes_encrypt(user.aes_key, message.encode(FORMAT))
             newMesssage = encryptedMessage + delimiter + encryptedHash
             user.client.send(newMesssage)
@@ -67,9 +67,6 @@ def broadcast(message, messageOwner):
 def loginCommand(message, address, client):
     #  ACCEPT 200 -> 0 /// FAILED 500 -> 1/// NOT_FOUND 401 -> 2 /// INCORRECT_PASSWORD 402 -> 3
     try:
-        integrityCheck = checkMessageIntegrity(message)
-        if integrityCheck != 1:
-            return 1
         ip, port = address
         messageList = message.split(" ")
         username = re.search(r'<(.*?)>', messageList[1]).group(1)
@@ -104,9 +101,6 @@ def loginCommand(message, address, client):
 def signupCommand(message, address):
     # ACCEPT 200 -> 0 /// USERNAME_TAKEN 400 -> 1 /// FAILED 500 -> 2
     try:
-        integrityCheck = checkMessageIntegrity(message)
-        if integrityCheck != 1:
-            return 1
         messageList = message.split(" ")
         ip, port = address
         username = re.search(r'<(.*?)>', messageList[1]).group(1)
@@ -122,7 +116,7 @@ def signupCommand(message, address):
             # Username already exists
             return 1
         else:
-            cur.execute("INSERT INTO users (username, password, AESKEY) VALUES (?, ?, ?)", (username, password, ""))
+            cur.execute("INSERT INTO users (username, password) VALUES (?, ?)", (username, password))
             conn.commit()
             for user in users:
                     if user.ip_address == ip and user.port_number == port:
@@ -134,7 +128,7 @@ def signupCommand(message, address):
 
 def connectCommand(message, address, client):
     # ACCEPT 200 -> 0 /// FAILED 500 -> 1
-    #try:
+    try:
         delimiter = b":::DELIMITER:::"
         parts = message.split(delimiter, maxsplit=1)
         decryptedMessage = rsa_crypt.rsa_decrypt(PRIVATEKEY, parts[0][:-2]).decode(FORMAT).split(" ")
@@ -145,15 +139,13 @@ def connectCommand(message, address, client):
         newNonce = challenge.calculateChallenge(receivedNonce, userAESKey)
         if messageCommand != "CONNECT":
             return 1
-        # TODO: make digital signature
-        # newMesssage = "ACCEPT_200" + f'{":::DELIMITER:::"}{newNonce}' + f'{":::DELIMITER:::"}{1}'
         initialMessage = "ACCEPT_200" + f'{":::DELIMITER:::"}{newNonce}'
         hashMessage = SHA256.new(initialMessage.encode(FORMAT))
         print(hashMessage.hexdigest())
         signature = pkcs1_15.new(PRIVATEKEY).sign(hashMessage)
         publicKeyClient = rsa_crypt.load_public_key_from_pem(publicKeyClientPem.encode(FORMAT))
         encryptedMessage = rsa_crypt.rsa_encrypt(publicKeyClient, initialMessage.encode(FORMAT))
-        newMesssage = encryptedMessage + delimiter + encryptedHash
+        newMesssage = encryptedMessage + delimiter + signature
         client.send(newMesssage)
         ip, port = address
         user_index = -1
@@ -164,23 +156,18 @@ def connectCommand(message, address, client):
         users[user_index].aes_key = userAESKey
         users[user_index].public_key_client = publicKeyClient
         return 0
-    # except Exception as e:
-    #     print(e)
-    #     return 1
-
-def checkMessageIntegrity(message , hashvalue):
-    try:
-        messageList = message.split(" ")
-        sentHashValue = re.search(r'<(.*?)>', messageList[-1]).group(1)
-        messageWithoutHash = message.replace(f'<{sentHashValue}>', "")[:-1]
-        hashValue = hashing.hash_sha256(messageWithoutHash)
-        if hashValue == sentHashValue:
-            return 1
-        else:
-            return 0
     except Exception as e:
         print(e)
-        return 2
+        return 1
+
+def checkMessageIntegrity(message , signature, publicKeyClient):
+    try:
+        calculatedHash = SHA256.new(message.encode(FORMAT))
+        pkcs1_15.new(publicKeyClient).verify(calculatedHash,signature)
+        return 1
+    except Exception as e:
+        print(e)
+        return 0
 
 def receive(client, address):
     isFirstMessage = True
@@ -196,8 +183,14 @@ def receive(client, address):
             isFirstMessage = False
         else:
             message = client.recv(1024)
+            delimiter = b":::DELIMITER:::"
+            parts = message.split(delimiter)
             aesKey = users[user_index].aes_key
-            message = aes_crypt.aes_decrypt(aesKey, message).decode(FORMAT)
+            message = aes_crypt.aes_decrypt(aesKey, parts[0]).decode(FORMAT)
+            digitalSignature = parts[1]
+            if not checkMessageIntegrity(message, digitalSignature, users[user_index].public_key_client):
+                print("Incorrect Digital Signature")
+                pass
             messageReceived = message.split(" ")
             ip, port = address
             match messageReceived[0]:
@@ -208,7 +201,7 @@ def receive(client, address):
                         message = 'ACCEPT 200'
                         delimiter = b":::DELIMITER:::"
                         hashMessage = SHA256.new(message.encode(FORMAT))
-                        encryptedHash = rsa_crypt.rsa_encrypt(PRIVATEKEY, hashMessage)
+                        encryptedHash = pkcs1_15.new(PRIVATEKEY).sign(hashMessage)
                         encryptedMessage = aes_crypt.aes_encrypt(users[user_index].aes_key, message.encode(FORMAT))
                         newMesssage = encryptedMessage + delimiter + encryptedHash
                         client.send(newMesssage)
@@ -216,7 +209,7 @@ def receive(client, address):
                         message = 'FAILED 500'
                         delimiter = b":::DELIMITER:::"
                         hashMessage = SHA256.new(message.encode(FORMAT))
-                        encryptedHash = rsa_crypt.rsa_encrypt(PRIVATEKEY, hashMessage)
+                        encryptedHash = pkcs1_15.new(PRIVATEKEY).sign(hashMessage)
                         encryptedMessage = aes_crypt.aes_encrypt(users[user_index].aes_key, message.encode(FORMAT))
                         newMesssage = encryptedMessage + delimiter + encryptedHash
                         client.send(newMesssage)
@@ -224,7 +217,7 @@ def receive(client, address):
                         message = 'NOT_FOUND 401'
                         delimiter = b":::DELIMITER:::"
                         hashMessage = SHA256.new(message.encode(FORMAT))
-                        encryptedHash = rsa_crypt.rsa_encrypt(PRIVATEKEY, hashMessage)
+                        encryptedHash = pkcs1_15.new(PRIVATEKEY).sign(hashMessage)
                         encryptedMessage = aes_crypt.aes_encrypt(users[user_index].aes_key, message.encode(FORMAT))
                         newMesssage = encryptedMessage + delimiter + encryptedHash
                         client.send(newMesssage)
@@ -232,19 +225,13 @@ def receive(client, address):
                         message = 'INCORRECT_PASSWORD 402'
                         delimiter = b":::DELIMITER:::"
                         hashMessage = SHA256.new(message.encode(FORMAT))
-                        encryptedHash = rsa_crypt.rsa_encrypt(PRIVATEKEY, hashMessage)
+                        encryptedHash = pkcs1_15.new(PRIVATEKEY).sign(hashMessage)
                         encryptedMessage = aes_crypt.aes_encrypt(users[user_index].aes_key, message.encode(FORMAT))
                         newMesssage = encryptedMessage + delimiter + encryptedHash
                         client.send(newMesssage)
                 case "MESSAGE":
                     try:
-                        integrityCheck = checkMessageIntegrity(message)
-                        if integrityCheck != 1:
-                            return 1
-                        messageList = message[8:].split(" ")
-                        sentHashValue = re.search(r'<(.*?)>', messageList[-1]).group(1)
-                        messageWithoutHash = message[8:].replace(f'<{sentHashValue}>', "")[:-1]
-                        broadcast(messageWithoutHash, client)
+                        broadcast(message, client)
                     except Exception as e:
                         print(e)
                         users[user_index].client.close()
@@ -258,7 +245,7 @@ def receive(client, address):
                         message = 'ACCEPT 200'
                         delimiter = b":::DELIMITER:::"
                         hashMessage = SHA256.new(message.encode(FORMAT))
-                        encryptedHash = rsa_crypt.rsa_encrypt(PRIVATEKEY, hashMessage)
+                        encryptedHash = pkcs1_15.new(PRIVATEKEY).sign(hashMessage)
                         encryptedMessage = aes_crypt.aes_encrypt(users[user_index].aes_key, message.encode(FORMAT))
                         newMesssage = encryptedMessage + delimiter + encryptedHash
                         client.send(newMesssage)
@@ -266,7 +253,7 @@ def receive(client, address):
                         message = 'USERNAME_TAKEN 400'
                         delimiter = b":::DELIMITER:::"
                         hashMessage = SHA256.new(message.encode(FORMAT))
-                        encryptedHash = rsa_crypt.rsa_encrypt(PRIVATEKEY, hashMessage)
+                        encryptedHash = pkcs1_15.new(PRIVATEKEY).sign(hashMessage)
                         encryptedMessage = aes_crypt.aes_encrypt(users[user_index].aes_key, message.encode(FORMAT))
                         newMesssage = encryptedMessage + delimiter + encryptedHash
                         client.send(newMesssage)
@@ -274,7 +261,7 @@ def receive(client, address):
                         message = 'FAILED 500'
                         delimiter = b":::DELIMITER:::"
                         hashMessage = SHA256.new(message.encode(FORMAT))
-                        encryptedHash = rsa_crypt.rsa_encrypt(PRIVATEKEY, hashMessage)
+                        encryptedHash = pkcs1_15.new(PRIVATEKEY).sign(hashMessage)
                         encryptedMessage = aes_crypt.aes_encrypt(users[user_index].aes_key, message.encode(FORMAT))
                         newMesssage = encryptedMessage + delimiter + encryptedHash
                         client.send(newMesssage)

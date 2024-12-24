@@ -38,7 +38,7 @@ def sendSignupRequst():
     message = f'CREATE <{username}> <{password}>'
     delimiter = b":::DELIMITER:::"
     hashMessage = SHA256.new(message.encode(FORMAT))
-    encryptedHash = rsa_crypt.rsa_encrypt(PRIVATEKEYCLIENT, hashMessage)
+    encryptedHash = pkcs1_15.new(PRIVATEKEYCLIENT).sign(hashMessage)
     encryptedMessage = aes_crypt.aes_encrypt(AESKEY, message.encode(FORMAT))
     newMesssage = encryptedMessage + delimiter + encryptedHash
     client.send(newMesssage)
@@ -90,7 +90,7 @@ def sendLoginRequest():
     message = f'LOGIN <{username}> <{password}>'
     delimiter = b":::DELIMITER:::"
     hashMessage = SHA256.new(message.encode(FORMAT))
-    encryptedHash = rsa_crypt.rsa_encrypt(PRIVATEKEYCLIENT, hashMessage)
+    encryptedHash = pkcs1_15.new(PRIVATEKEYCLIENT).sign(hashMessage)
     encryptedMessage = aes_crypt.aes_encrypt(AESKEY, message.encode(FORMAT))
     newMesssage = encryptedMessage + delimiter + encryptedHash
     client.send(newMesssage)
@@ -149,7 +149,7 @@ def connectToServer():
     totalMessage = encryptedMessage + (f'{delimiter}{pem_public_key_client}').encode(FORMAT)
     client.send(totalMessage)
     while True:
-        # try:
+        try:
             message = client.recv(1024)
             delimiter = b":::DELIMITER:::"
             parts = message.split(delimiter)
@@ -170,12 +170,12 @@ def connectToServer():
                 client.close()
                 break
             return
-        # except Exception as e:
-        #     print(e)
-        #     print(f"{BRIGHT}{RED}An error occured with the connection!")
-        #     print(Style.RESET_ALL)
-        #     client.close()
-        #     break
+        except Exception as e:
+            print(e)
+            print(f"{BRIGHT}{RED}An error occured with the connection!")
+            print(Style.RESET_ALL)
+            client.close()
+            break
 
 def receive():
     while True:
@@ -190,10 +190,8 @@ def receive():
                 print(Style.RESET_ALL)
                 client.close()
                 break
-            messageList = decryptedMessage.split(" ")
-            sentHashValue = re.search(r'<(.*?)>', messageList[-1]).group(1)
-            messageWithoutHash = message.replace(f'<{sentHashValue}>', "")[:-1]
-            print(messageWithoutHash)
+            newMessage = decryptedMessage.replace('MESSAGE ', "")[:-1]
+            print(newMessage)
         except:
             # Close Connection When Error
             print("An error occured!")
@@ -205,7 +203,7 @@ def write():
         message = 'MESSAGE {}: {}'.format(nickname, input(''))
         delimiter = b":::DELIMITER:::"
         hashMessage = SHA256.new(message.encode(FORMAT))
-        encryptedHash = rsa_crypt.rsa_encrypt(PRIVATEKEYCLIENT, hashMessage)
+        encryptedHash = pkcs1_15.new(PRIVATEKEYCLIENT).sign(hashMessage)
         encryptedMessage = aes_crypt.aes_encrypt(AESKEY, message.encode(FORMAT))
         newMesssage = encryptedMessage + delimiter + encryptedHash
         client.send(newMesssage)
@@ -213,11 +211,7 @@ def write():
 def checkMessageIntegrity(message , signature):
     global PUBLICKEY
     try:
-        # calculatedHash = hashing.hash_sha256(message)
         calculatedHash = SHA256.new(message.encode(FORMAT))
-        print(calculatedHash.hexdigest())
-        print(signature)
-        print(PUBLICKEY.public_key)
         pkcs1_15.new(PUBLICKEY).verify(calculatedHash,signature)
         return 1
     except Exception as e:
