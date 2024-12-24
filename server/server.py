@@ -129,24 +129,20 @@ def signupCommand(message, address):
 
 def connectCommand(message, address, client):
     # ACCEPT 200 -> 0 /// FAILED 500 -> 1
-    # try:
-        print(message)
-        encrypted_bytes, separator, public_key_encoded = message.partition(b':::DELIMITER:::')
-        print(encrypted_bytes)
-        print(public_key_encoded)
-        decryptedMessage = rsa_crypt.rsa_decrypt(PRIVATEKEY, encrypted_bytes)
-        print(decryptedMessage)
+    try:
+        delimiter = b":::DELIMITER:::"
+        parts = message.split(delimiter, maxsplit=1)
+        decryptedMessage = rsa_crypt.rsa_decrypt(PRIVATEKEY, parts[0][:-2]).decode(FORMAT).split(" ")
         messageCommand = decryptedMessage[0]
-        userAESKey = decryptedMessage[1]
-        receivedNonce = decryptedMessage[2]
-        publicKeyClientPem = public_key_encoded
+        userAESKey = decryptedMessage[1].encode('utf-8')
+        receivedNonce = decryptedMessage[2].encode('utf-8')
+        publicKeyClientPem = parts[1][2:].decode("utf-8").strip("'").replace("\\n", "\n")
         newNonce = challenge.calculateChallenge(receivedNonce, userAESKey)
         if messageCommand != "CONNECT":
             return 1
         # TODO: make digital signature
-        newMesssage = "ACCEPT_200" + f' <{newNonce}>' + f' <{1}>'
-        print(publicKeyClientPem)
-        publicKeyClient = rsa_crypt.load_public_key_from_pem(publicKeyClientPem)
+        newMesssage = "ACCEPT_200" + f'{delimiter}{newNonce}' + f'{delimiter}{1}'
+        publicKeyClient = rsa_crypt.load_public_key_from_pem(publicKeyClientPem.encode(FORMAT))
         encryptedMessage = rsa_crypt.rsa_encrypt(publicKeyClient, newMesssage.encode(FORMAT))
         client.send(encryptedMessage)
         ip, port = address
@@ -155,13 +151,12 @@ def connectCommand(message, address, client):
             if users[i].ip_address == ip and users[i].port_number == port:
                 user_index = i
                 break
-        print(userAESKey)
         users[user_index].aes_key = userAESKey
         users[user_index].public_key_client = publicKeyClient
         return 0
-    # except Exception as e:
-    #     print(e)
-    #     return 1
+    except Exception as e:
+        print(e)
+        return 1
 
 def checkMessageIntegrity(message):
     try:

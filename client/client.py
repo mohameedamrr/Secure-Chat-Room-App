@@ -120,7 +120,6 @@ def connectToServer():
     (private_key_client, public_key_client) = rsa_crypt.generate_rsa_keys()
     hmacKey = '1'
     pem_public_key_client = rsa_crypt.key_to_pem(public_key_client, is_private=False)
-    print(pem_public_key_client)
     messageToEncrypt = message + f' {AESKEY}' + f' {nonce}'
     load_dotenv()
     PUBLICKEY = rsa_crypt.RSA.import_key(os.getenv("SERVER_PUBLIC_KEY"))
@@ -129,13 +128,14 @@ def connectToServer():
     totalMessage = encryptedMessage + (f'{delimiter}{pem_public_key_client}').encode(FORMAT)
     client.send(totalMessage)
     while True:
-        try:
+        # try:
             message = client.recv(1024)
             decryptedMessage = rsa_crypt.rsa_decrypt(private_key_client, message).decode(FORMAT)
-            messageList = decryptedMessage.split(" ")
-            messageStatus = re.search(r'<(.*?)>', messageList[0]).group(1)
-            receivedNonce = re.search(r'<(.*?)>', messageList[1]).group(1)
-            digitalSignature = re.search(r'<(.*?)>', messageList[2]).group(1)
+            messageList = decryptedMessage.split(delimiter)
+            print(messageList)
+            messageStatus = messageList[0]
+            receivedNonce = messageList[1]
+            digitalSignature = messageList[2]
             calculatedNonce = challenge.calculateChallenge(nonce, AESKEY)
             if(calculatedNonce != receivedNonce or messageStatus != "ACCEPT_200"):
                 print(f"{BRIGHT}{RED}An error occured with the connection! (Check Server)")
@@ -143,12 +143,12 @@ def connectToServer():
                 client.close()
                 break
             return
-        except Exception as e:
-            print(e)
-            print(f"{BRIGHT}{RED}An error occured with the connection!")
-            print(Style.RESET_ALL)
-            client.close()
-            break
+        # except Exception as e:
+        #     print(e)
+        #     print(f"{BRIGHT}{RED}An error occured with the connection!")
+        #     print(Style.RESET_ALL)
+        #     client.close()
+        #     break
 
 def receive():
     while True:
