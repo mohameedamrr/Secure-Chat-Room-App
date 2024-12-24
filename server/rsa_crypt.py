@@ -1,5 +1,7 @@
 from Crypto.PublicKey import RSA
 from Crypto.Cipher import PKCS1_OAEP
+from cryptography.hazmat.primitives.asymmetric import rsa
+from cryptography.hazmat.primitives import serialization
 
 def generate_rsa_keys(key_size=2048):
     key = RSA.generate(key_size)
@@ -16,3 +18,13 @@ def rsa_decrypt(private_key, ciphertext):
     cipher = PKCS1_OAEP.new(private_key)
     plaintext = cipher.decrypt(ciphertext)
     return plaintext
+
+def key_to_pem(key, is_private=True):
+    if is_private:
+        return key.export_key(format='PEM')
+    else:
+        return key.publickey().export_key(format='PEM')
+
+def load_public_key_from_pem(pem_data):
+    public_key = RSA.import_key(pem_data)
+    return public_key

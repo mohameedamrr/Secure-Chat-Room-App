@@ -1,3 +1,4 @@
+import os
 import socket
 import threading
 from formats import MAGENTA,WHITE,Style,BLUE,RED,ITALIC,YELLOW,BRIGHT,GREEN,CYAN,MAGENTA_BG
@@ -5,6 +6,8 @@ import re
 import aes_crypt
 import rsa_crypt
 import hashing
+import challenge
+from dotenv import load_dotenv, dotenv_values
 
 nickname = ""
 FORMAT = 'utf-8'
@@ -112,18 +115,33 @@ def sendLoginRequest():
 def connectToServer():
     global AESKEY
     message = 'CONNECT'
-    HMAC = hashing.hash_sha256(message)
-    messageWithHMAC = message + f' <{HMAC}>'
-    client.send(messageWithHMAC.encode(FORMAT))
+    nonce = challenge.generateNonce()
+    AESKEY = aes_crypt.generate_aes_key()
+    (private_key_client, public_key_client) = rsa_crypt.generate_rsa_keys()
+    hmacKey = '1'
+    pem_public_key_client = rsa_crypt.key_to_pem(public_key_client, is_private=False)
+    print(pem_public_key_client)
+    messageToEncrypt = message + f' {AESKEY}' + f' {nonce}'
+    load_dotenv()
+    PUBLICKEY = rsa_crypt.RSA.import_key(os.getenv("SERVER_PUBLIC_KEY"))
+    encryptedMessage = rsa_crypt.rsa_encrypt(PUBLICKEY, messageToEncrypt.encode(FORMAT))
+    delimiter = b":::DELIMITER:::"
+    totalMessage = encryptedMessage + (f'{delimiter}{pem_public_key_client}').encode(FORMAT)
+    client.send(totalMessage)
     while True:
         try:
             message = client.recv(1024)
-            rsaPublicKey = message
-            public_key = rsa_crypt.RSA.import_key(rsaPublicKey)
-            aesKey = aes_crypt.generate_aes_key()
-            rsaEncryptedMessage = rsa_crypt.rsa_encrypt(public_key, aesKey)
-            AESKEY = aesKey
-            client.send(rsaEncryptedMessage)
+            decryptedMessage = rsa_crypt.rsa_decrypt(private_key_client, message).decode(FORMAT)
+            messageList = decryptedMessage.split(" ")
+            messageStatus = re.search(r'<(.*?)>', messageList[0]).group(1)
+            receivedNonce = re.search(r'<(.*?)>', messageList[1]).group(1)
+            digitalSignature = re.search(r'<(.*?)>', messageList[2]).group(1)
+            calculatedNonce = challenge.calculateChallenge(nonce, AESKEY)
+            if(calculatedNonce != receivedNonce or messageStatus != "ACCEPT_200"):
+                print(f"{BRIGHT}{RED}An error occured with the connection! (Check Server)")
+                print(Style.RESET_ALL)
+                client.close()
+                break
             return
         except Exception as e:
             print(e)
