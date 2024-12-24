@@ -12,6 +12,7 @@ import os
 import base64
 import ast
 from Crypto.Hash import SHA256
+from Crypto.Signature import pkcs1_15
 
 host = '127.0.0.1'
 port = 55555
@@ -146,15 +147,15 @@ def connectCommand(message, address, client):
         # newMesssage = "ACCEPT_200" + f'{":::DELIMITER:::"}{newNonce}' + f'{":::DELIMITER:::"}{1}'
         initialMessage = "ACCEPT_200" + f'{":::DELIMITER:::"}{newNonce}'
         hashMessage = SHA256.new(initialMessage.encode(FORMAT))
-        print(hashMessage)
-        encryptedHash = rsa_crypt.rsa_encrypt(PRIVATEKEY, hashMessage)
+        print(hashMessage.hexdigest())
+        signature = pkcs1_15.new(PRIVATEKEY).sign(hashMessage)
         publicKeyClient = rsa_crypt.load_public_key_from_pem(publicKeyClientPem.encode(FORMAT))
         encryptedMessage = rsa_crypt.rsa_encrypt(publicKeyClient, initialMessage.encode(FORMAT))
         print(type(encryptedMessage))
-        print(type(encryptedHash))
+        # print(type(encryptedHash))
         print(type(delimiter))
-        newMesssage = encryptedMessage + delimiter + encryptedHash
-        print(encryptedHash)
+        newMesssage = encryptedMessage + delimiter + signature
+        # print(encryptedHash)
         client.send(newMesssage)
         ip, port = address
         user_index = -1
