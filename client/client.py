@@ -215,10 +215,10 @@ def checkMessageIntegrity(message , signature):
     try:
         # calculatedHash = hashing.hash_sha256(message)
         calculatedHash = SHA256.new(message.encode(FORMAT))
-        print(calculatedHash)
+        print(calculatedHash.hexdigest())
         print(signature)
         print(PUBLICKEY.public_key)
-        pkcs1_15.new(PUBLICKEY).verify(calculatedHash, signature)
+        pkcs1_15.new(PUBLICKEY).verify(calculatedHash,signature)
         return 1
     except Exception as e:
         print(e)
