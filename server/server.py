@@ -5,7 +5,6 @@ import sqlite3
 import rsa_crypt
 import aes_crypt
 from user import User
-import hashing
 import challenge
 from dotenv import load_dotenv, dotenv_values
 import os
@@ -76,12 +75,14 @@ def loginCommand(message, address, client):
         conn = sqlite3.connect("server/securityProject.db")
         cur = conn.cursor()
 
-        cur.execute("SELECT password FROM users WHERE username = ?", (username,))
+        cur.execute("SELECT password, salt FROM users WHERE username = ?", (username,))
         result = cur.fetchone()
 
         if result:
             stored_password = result[0]
-            if stored_password == password:
+            salt = result[1]
+            hashedPassword = SHA256.new(password.encode(FORMAT) + salt).hexdigest()
+            if stored_password == hashedPassword:
                 for user in users:
                     if user.ip_address == ip and user.port_number == port:
                         user.username = username
@@ -105,6 +106,8 @@ def signupCommand(message, address):
         ip, port = address
         username = re.search(r'<(.*?)>', messageList[1]).group(1)
         password = re.search(r'<(.*?)>', messageList[2]).group(1)
+        salt = re.search(r'<(.*?)>', messageList[3]).group(1)
+        hashedPassword = SHA256.new(password.encode(FORMAT) + salt.encode(FORMAT)).hexdigest()
 
         conn = sqlite3.connect("server/securityProject.db")
         cur = conn.cursor()
@@ -116,7 +119,7 @@ def signupCommand(message, address):
             # Username already exists
             return 1
         else:
-            cur.execute("INSERT INTO users (username, password) VALUES (?, ?)", (username, password))
+            cur.execute("INSERT INTO users (username, password, salt) VALUES (?, ?, ?)", (username, hashedPassword, salt.encode(FORMAT)))
             conn.commit()
             for user in users:
                     if user.ip_address == ip and user.port_number == port:
@@ -131,7 +134,7 @@ def connectCommand(message, address, client):
     try:
         delimiter = b":::DELIMITER:::"
         parts = message.split(delimiter, maxsplit=1)
-        decryptedMessage = rsa_crypt.rsa_decrypt(PRIVATEKEY, parts[0][:-2]).decode(FORMAT).split(" ")
+        decryptedMessage = rsa_crypt.rsa_decrypt(PRIVATEKEY, parts[0][:-2]).decode(FORMAT).split(":::")
         messageCommand = decryptedMessage[0]
         userAESKey = ast.literal_eval(decryptedMessage[1])
         receivedNonce = ast.literal_eval(decryptedMessage[2])

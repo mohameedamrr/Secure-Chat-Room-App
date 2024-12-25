@@ -2,10 +2,8 @@ import os
 import socket
 import threading
 from formats import MAGENTA,WHITE,Style,BLUE,RED,ITALIC,YELLOW,BRIGHT,GREEN,CYAN,MAGENTA_BG
-import re
 import aes_crypt
 import rsa_crypt
-import hashing
 import challenge
 from Crypto.Signature import pkcs1_15
 from dotenv import load_dotenv, dotenv_values
@@ -34,8 +32,8 @@ def sendSignupRequst():
     print(f"{BRIGHT}Processing....")
     print(Style.RESET_ALL)
 
-    password = hashing.hash_sha256(password)
-    message = f'CREATE <{username}> <{password}>'
+    salt = os.urandom(16)
+    message = f'CREATE <{username}> <{password}> <{salt}>'
     delimiter = b":::DELIMITER:::"
     hashMessage = SHA256.new(message.encode(FORMAT))
     encryptedHash = pkcs1_15.new(PRIVATEKEYCLIENT).sign(hashMessage)
@@ -85,8 +83,6 @@ def sendLoginRequest():
     print(Style.RESET_ALL)
     print(f"{BRIGHT}Processing....")
     print(Style.RESET_ALL)
-
-    password = hashing.hash_sha256(password)
     message = f'LOGIN <{username}> <{password}>'
     delimiter = b":::DELIMITER:::"
     hashMessage = SHA256.new(message.encode(FORMAT))
@@ -141,7 +137,7 @@ def connectToServer():
     (private_key_client, public_key_client) = rsa_crypt.generate_rsa_keys()
     PRIVATEKEYCLIENT = private_key_client
     pem_public_key_client = rsa_crypt.key_to_pem(public_key_client, is_private=False)
-    messageToEncrypt = message + f' {AESKEY}' + f' {nonce}'
+    messageToEncrypt = message + f':::{AESKEY}' + f':::{nonce}'
     load_dotenv()
     PUBLICKEY = rsa_crypt.RSA.import_key(os.getenv("SERVER_PUBLIC_KEY"))
     encryptedMessage = rsa_crypt.rsa_encrypt(PUBLICKEY, messageToEncrypt.encode(FORMAT))
@@ -190,7 +186,7 @@ def receive():
                 print(Style.RESET_ALL)
                 client.close()
                 break
-            newMessage = decryptedMessage.replace('MESSAGE ', "")[:-1]
+            newMessage = decryptedMessage.replace('MESSAGE ', "")
             print(newMessage)
         except:
             # Close Connection When Error
