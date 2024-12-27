@@ -29,6 +29,4 @@ username2, password2 = "amr", hashlib.sha256("test".encode() + salt2).hexdigest(
 cur.execute("INSERT INTO users (username, password, salt) VALUES (?, ?, ?)", (username1, password1, salt1))
 cur.execute("INSERT INTO users (username, password, salt) VALUES (?, ?, ?)", (username2, password2, salt2))
 
-
-
 conn.commit()
